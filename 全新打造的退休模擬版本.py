@@ -1,8 +1,59 @@
+from functools import partial
 import numpy as np
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 import yfinance as yf
 import pandas as pd
+import multiprocessing as mp
+
+def process_single_window(year, window_size, simulations):
+    window_start = f"{year}-01-01"
+    window_end = f"{year + window_size - 1}-12-31"
+    historical_returns = get_sp500_returns(window_start, window_end)
+    
+    return_mean, return_std = calculate_returns_volatility(historical_returns)
+    states, transition_matrix = define_market_states(historical_returns)
+    
+    simulation_result = monte_carlo_retirement_simulation(
+        initial_portfolio=20000000,
+        years=30,
+        withdrawal_rate=0.04,
+        inflation_rate=0.02,
+        states=states,
+        transition_matrix=transition_matrix,
+        simulations=simulations,
+        initial_withdrawal=400000,
+        additional_income=200000, 
+        emergency_fund=1000000
+    )
+    
+    success_rate, _, _, final_portfolios, median_final_portfolio, _, _, _, _, _ = simulation_result
+    
+    return {
+        'window_start': year,
+        'window_end': year + window_size - 1,
+        'success_rate': success_rate,
+        'median_final_portfolio': median_final_portfolio,
+        'return_mean': return_mean,
+        'return_std': return_std
+    }
+
+def rolling_window_analysis(start_year, end_year, window_size=20, simulations=10000):
+    years_range = range(start_year, end_year - window_size + 2)
+    
+    # 使用所有可用的 CPU 核心
+    num_cores = mp.cpu_count()
+    
+    # 創建一個進程池
+    with mp.Pool(num_cores) as pool:
+        # 使用 partial 來固定 window_size 和 simulations 參數
+        process_func = partial(process_single_window, window_size=window_size, simulations=simulations)
+        
+        # 使用 tqdm 來顯示進度
+        results = list(tqdm(pool.imap(process_func, years_range), total=len(years_range), desc="Processing rolling windows"))
+    
+    return pd.DataFrame(results)
+
 
 def get_sp500_returns(start_date='1950-01-01', end_date='2023-12-31'):
     """
@@ -297,43 +348,43 @@ def print_statistics(success_rate, successes, failures, median_final_portfolio, 
     print(f"95% 風險值 (VaR): {var_95:,.0f} 台幣")
     print(f"99% 風險值 (VaR): {var_99:,.0f} 台幣")
 
-def rolling_window_analysis(start_year, end_year, window_size=20, simulations=10000):
-    results = []
-    years_range = range(start_year, end_year - window_size + 2)
+# def rolling_window_analysis(start_year, end_year, window_size=20, simulations=10000):
+#     results = []
+#     years_range = range(start_year, end_year - window_size + 2)
     
-    for year in tqdm(years_range, desc="Processing rolling windows"):
-        window_start = f"{year}-01-01"
-        window_end = f"{year + window_size - 1}-12-31"
-        historical_returns = get_sp500_returns(window_start, window_end)
+#     for year in tqdm(years_range, desc="Processing rolling windows"):
+#         window_start = f"{year}-01-01"
+#         window_end = f"{year + window_size - 1}-12-31"
+#         historical_returns = get_sp500_returns(window_start, window_end)
         
-        return_mean, return_std = calculate_returns_volatility(historical_returns)
-        states, transition_matrix = define_market_states(historical_returns)
+#         return_mean, return_std = calculate_returns_volatility(historical_returns)
+#         states, transition_matrix = define_market_states(historical_returns)
         
-        simulation_result = monte_carlo_retirement_simulation(
-            initial_portfolio=20000000,
-            years=30,
-            withdrawal_rate=0.04,
-            inflation_rate=0.02,
-            states=states,
-            transition_matrix=transition_matrix,
-            simulations=simulations,
-            initial_withdrawal=400000,
-            additional_income=200000, 
-            emergency_fund=1000000
-        )
+#         simulation_result = monte_carlo_retirement_simulation(
+#             initial_portfolio=20000000,
+#             years=30,
+#             withdrawal_rate=0.04,
+#             inflation_rate=0.02,
+#             states=states,
+#             transition_matrix=transition_matrix,
+#             simulations=simulations,
+#             initial_withdrawal=400000,
+#             additional_income=200000, 
+#             emergency_fund=1000000
+#         )
         
-        success_rate, _, _, final_portfolios, median_final_portfolio, _, _, _, _, _ = simulation_result
+#         success_rate, _, _, final_portfolios, median_final_portfolio, _, _, _, _, _ = simulation_result
         
-        results.append({
-            'window_start': year,
-            'window_end': year + window_size - 1,
-            'success_rate': success_rate,
-            'median_final_portfolio': median_final_portfolio,
-            'return_mean': return_mean,
-            'return_std': return_std
-        })
+#         results.append({
+#             'window_start': year,
+#             'window_end': year + window_size - 1,
+#             'success_rate': success_rate,
+#             'median_final_portfolio': median_final_portfolio,
+#             'return_mean': return_mean,
+#             'return_std': return_std
+#         })
     
-    return pd.DataFrame(results)
+#     return pd.DataFrame(results)
 
 def plot_rolling_results(rolling_results):
     fig, axs = plt.subplots(2, 2, figsize=(20, 15))
